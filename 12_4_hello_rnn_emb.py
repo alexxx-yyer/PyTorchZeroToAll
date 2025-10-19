@@ -1,7 +1,10 @@
 # Lab 12 RNN
 import torch
 import torch.nn as nn
-from torch.autograd import Variable
+
+# CUDA设备设置
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+print(f'Using device: {device}')
 
 torch.manual_seed(777)  # reproducibility
 
@@ -12,9 +15,9 @@ idx2char = ['h', 'i', 'e', 'l', 'o']
 x_data = [[0, 1, 0, 2, 3, 3]]   # hihell
 y_data = [1, 0, 2, 3, 3, 4]    # ihello
 
-# As we have one batch of samples, we will change them to variables only once
-inputs = Variable(torch.LongTensor(x_data))
-labels = Variable(torch.LongTensor(y_data))
+# As we have one batch of samples, we will change them to tensors only once
+inputs = torch.tensor(x_data, dtype=torch.long).to(device)
+labels = torch.tensor(y_data, dtype=torch.long).to(device)
 
 num_classes = 5
 input_size = 5
@@ -33,14 +36,14 @@ class Model(nn.Module):
         self.hidden_size = hidden_size
         self.embedding = nn.Embedding(input_size, embedding_size)
         self.rnn = nn.RNN(input_size=embedding_size,
-                          hidden_size=5, batch_first=True)
+                          hidden_size=hidden_size, batch_first=True)
         self.fc = nn.Linear(hidden_size, num_classes)
 
     def forward(self, x):
         # Initialize hidden and cell states
         # (num_layers * num_directions, batch, hidden_size)
-        h_0 = Variable(torch.zeros(
-            self.num_layers, x.size(0), self.hidden_size))
+        h_0 = torch.zeros(
+            self.num_layers, x.size(0), self.hidden_size).to(device)
 
         emb = self.embedding(x)
         emb = emb.view(batch_size, sequence_length, -1)
@@ -53,7 +56,7 @@ class Model(nn.Module):
 
 
 # Instantiate RNN model
-model = Model(num_layers, hidden_size)
+model = Model(num_layers, hidden_size).to(device)
 print(model)
 
 # Set loss and optimizer function
@@ -69,7 +72,7 @@ for epoch in range(100):
     loss.backward()
     optimizer.step()
     _, idx = outputs.max(1)
-    idx = idx.data.numpy()
+    idx = idx.detach().cpu().numpy()
     result_str = [idx2char[c] for c in idx.squeeze()]
     print("epoch: %d, loss: %1.3f" % (epoch + 1, loss.item()))
     print("Predicted string: ", ''.join(result_str))

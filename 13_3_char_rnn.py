@@ -1,16 +1,19 @@
 # https://github.com/spro/practical-pytorch
 import torch
 import torch.nn as nn
-from torch.autograd import Variable
 from torch.utils.data import DataLoader
 
 from text_loader import TextDataset
 
 hidden_size = 100
 n_layers = 3
-batch_size = 1
+batch_size = 256  # 进一步增加批处理大小
 n_epochs = 100
 n_characters = 128  # ASCII
+
+# 设备管理
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+print(f'Using device: {device}')
 
 
 class RNN(nn.Module):
@@ -36,23 +39,23 @@ class RNN(nn.Module):
         output = self.linear(output.view(1, -1))  # S(=1) x I
         return output, hidden
 
-    def init_hidden(self):
+    def init_hidden(self, batch_size=1):
         if torch.cuda.is_available():
-            hidden = torch.zeros(self.n_layers, 1, self.hidden_size).cuda()
+            hidden = torch.zeros(self.n_layers, batch_size, self.hidden_size).cuda()
         else:
-            hidden = torch.zeros(self.n_layers, 1, self.hidden_size)
+            hidden = torch.zeros(self.n_layers, batch_size, self.hidden_size)
 
-        return Variable(hidden)
+        return hidden
 
 
 def str2tensor(string):
     tensor = [ord(c) for c in string]
-    tensor = torch.LongTensor(tensor)
+    tensor = torch.tensor(tensor, dtype=torch.long)
 
     if torch.cuda.is_available():
         tensor = tensor.cuda()
 
-    return Variable(tensor)
+    return tensor
 
 
 def generate(decoder, prime_str='A', predict_len=100, temperature=0.8):
@@ -70,11 +73,11 @@ def generate(decoder, prime_str='A', predict_len=100, temperature=0.8):
         output, hidden = decoder(inp, hidden)
 
         # Sample from the network as a multinomial distribution
-        output_dist = output.data.view(-1).div(temperature).exp()
+        output_dist = output.view(-1).div(temperature).exp()
         top_i = torch.multinomial(output_dist, 1)[0]
 
         # Add predicted character to string and use as next input
-        predicted_char = chr(top_i)
+        predicted_char = chr(top_i.item())
         predicted += predicted_char
         inp = str2tensor(predicted_char)
 
@@ -86,7 +89,7 @@ def generate(decoder, prime_str='A', predict_len=100, temperature=0.8):
 # http://pytorch.org/tutorials/beginner/former_torchies/parallelism_tutorial.html.
 
 
-def train_teacher_forching(line):
+def train_teacher_forcing(line):
     input = str2tensor(line[:-1])
     target = str2tensor(line[1:])
 
@@ -95,13 +98,13 @@ def train_teacher_forching(line):
 
     for c in range(len(input)):
         output, hidden = decoder(input[c], hidden)
-        loss += criterion(output, target[c])
+        loss += criterion(output, target[c].unsqueeze(0))
 
     decoder.zero_grad()
     loss.backward()
     decoder_optimizer.step()
 
-    return loss.data[0] / len(input)
+    return loss.item() / len(input)
 
 
 def train(line):
@@ -114,27 +117,27 @@ def train(line):
 
     for c in range(len(input)):
         output, hidden = decoder(decoder_in, hidden)
-        loss += criterion(output, target[c])
+        loss += criterion(output, target[c].unsqueeze(0))
         decoder_in = output.max(1)[1]
 
     decoder.zero_grad()
     loss.backward()
     decoder_optimizer.step()
 
-    return loss.data[0] / len(input)
+    return loss.item() / len(input)
 
 if __name__ == '__main__':
 
-    decoder = RNN(n_characters, hidden_size, n_characters, n_layers)
-    if torch.cuda.is_available():
-        decoder.cuda()
+    decoder = RNN(n_characters, hidden_size, n_characters, n_layers).to(device)
 
     decoder_optimizer = torch.optim.Adam(decoder.parameters(), lr=0.001)
     criterion = nn.CrossEntropyLoss()
 
     train_loader = DataLoader(dataset=TextDataset(),
                               batch_size=batch_size,
-                              shuffle=True)
+                              shuffle=True,
+                              num_workers=4,
+                              pin_memory=True if device.type == 'cuda' else False)
 
     print("Training for %d epochs..." % n_epochs)
     for epoch in range(1, n_epochs + 1):

@@ -7,7 +7,7 @@ import torch.nn.functional as F
 import time
 
 # Training settings
-batch_size = 64
+batch_size = 128  # 增加批处理大小
 device = 'cuda' if cuda.is_available() else 'cpu'
 print(f'Training MNIST Model on {device}\n{"=" * 44}')
 
@@ -24,11 +24,15 @@ test_dataset = datasets.MNIST(root='./mnist_data/',
 # Data Loader (Input Pipeline)
 train_loader = data.DataLoader(dataset=train_dataset,
                                            batch_size=batch_size,
-                                           shuffle=True)
+                                           shuffle=True,
+                                           num_workers=4,
+                                           pin_memory=True if device == 'cuda' else False)
 
 test_loader = data.DataLoader(dataset=test_dataset,
                                           batch_size=batch_size,
-                                          shuffle=False)
+                                          shuffle=False,
+                                          num_workers=4,
+                                          pin_memory=True if device == 'cuda' else False)
 
 
 class Net(nn.Module):
@@ -81,8 +85,8 @@ def test():
         # sum up batch loss
         test_loss += criterion(output, target).item()
         # get the index of the max
-        pred = output.data.max(1, keepdim=True)[1]
-        correct += pred.eq(target.data.view_as(pred)).cpu().sum()
+        pred = output.max(1, keepdim=True)[1]
+        correct += pred.eq(target.view_as(pred)).cpu().sum()
 
     test_loss /= len(test_loader.dataset)
     print(f'===========================\nTest set: Average loss: {test_loss:.4f}, Accuracy: {correct}/{len(test_loader.dataset)} '

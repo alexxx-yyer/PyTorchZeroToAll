@@ -2,33 +2,31 @@
 # https://github.com/spro/practical-pytorch/blob/master/seq2seq-translation/seq2seq-translation.ipynb
 import torch
 import torch.nn as nn
-from torch.autograd import Variable
 import torch.nn.functional as F
+
+# CUDA设备设置
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 MAX_LENGTH = 100
 
 SOS_token = chr(0)
 EOS_token = 1
 
-# Helper function to create Variable based on
-# the cuda availability
+# Helper function to move tensor to cuda if available
 
 
-def cuda_variable(tensor):
-    # Do cuda() before wrapping with variable
-    if torch.cuda.is_available():
-        return Variable(tensor.cuda())
-    else:
-        return Variable(tensor)
+def cuda_tensor(tensor):
+    # Move to device
+    return tensor.to(device)
 
 
-# Sting to char tensor
+# String to char tensor
 def str2tensor(msg, eos=False):
     tensor = [ord(c) for c in msg]
     if eos:
         tensor.append(EOS_token)
 
-    return cuda_variable(torch.LongTensor(tensor))
+    return cuda_tensor(torch.tensor(tensor, dtype=torch.long))
 
 
 # To demonstrate seq2seq, We don't handle batch in the code,
@@ -58,7 +56,7 @@ class EncoderRNN(nn.Module):
 
     def init_hidden(self):
         # (num_layers * num_directions, batch, hidden_size)
-        return cuda_variable(torch.zeros(self.n_layers, 1, self.hidden_size))
+        return cuda_tensor(torch.zeros(self.n_layers, 1, self.hidden_size))
 
 
 class DecoderRNN(nn.Module):
@@ -81,7 +79,7 @@ class DecoderRNN(nn.Module):
 
     def init_hidden(self):
         # (num_layers * num_directions, batch, hidden_size)
-        return cuda_variable(torch.zeros(self.n_layers, 1, self.hidden_size))
+        return cuda_tensor(torch.zeros(self.n_layers, 1, self.hidden_size))
 
 
 class AttnDecoderRNN(nn.Module):
@@ -124,8 +122,8 @@ class AttnDecoderRNN(nn.Module):
     def get_att_weight(self, hidden, encoder_hiddens):
         seq_len = len(encoder_hiddens)
 
-        # Create variable to store attention energies
-        attn_scores = cuda_variable(torch.zeros(seq_len))  # B x 1 x S
+        # Create tensor to store attention energies
+        attn_scores = cuda_tensor(torch.zeros(seq_len, dtype=torch.float))  # B x 1 x S
 
         # Calculate energies for each encoder hidden
         for i in range(seq_len):
@@ -134,7 +132,7 @@ class AttnDecoderRNN(nn.Module):
         # Normalize scores to weights in range 0 to 1,
         # resize to 1 x 1 x seq_len
         # print("att_scores", attn_scores.size())
-        return F.softmax(attn_scores).view(1, 1, -1)
+        return F.softmax(attn_scores, dim=0).view(1, 1, -1)
 
     # score = h^T W h^e = h dot (W h^e)
     # TODO: We need to implement different score models

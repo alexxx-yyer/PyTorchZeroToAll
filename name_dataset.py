@@ -3,8 +3,10 @@
 # http://pytorch.org/tutorials/beginner/data_loading_tutorial.html#dataset-class
 import torch
 import numpy as np
-from torch.autograd import Variable
 from torch.utils.data import Dataset, DataLoader
+
+# CUDA设备设置
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 import csv
 import gzip
 

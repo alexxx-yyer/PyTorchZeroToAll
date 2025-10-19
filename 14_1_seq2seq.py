@@ -8,9 +8,13 @@ from seq2seq_models import str2tensor, EOS_token, SOS_token
 
 HIDDEN_SIZE = 100
 N_LAYERS = 1
-BATCH_SIZE = 1
+BATCH_SIZE = 32  # 增加批处理大小
 N_EPOCH = 100
 N_CHARS = 128  # ASCII
+
+# 设备管理
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+print(f'Using device: {device}')
 
 
 # Simple test to show how our network works
@@ -50,14 +54,14 @@ def train(src, target):
         # Others, we use teacher forcing
         token = target_var[c - 1] if c else str2tensor(SOS_token)
         output, hidden = decoder(token, hidden)
-        loss += criterion(output, target_var[c])
+        loss += criterion(output, target_var[c].unsqueeze(0))
 
     encoder.zero_grad()
     decoder.zero_grad()
     loss.backward()
     optimizer.step()
 
-    return loss.data[0] / len(target_var)
+    return loss.item() / len(target_var)
 
 
 # Translate the given input
@@ -74,14 +78,14 @@ def translate(enc_input='thisissungkim.iloveyou.', predict_len=100, temperature=
         output, hidden = decoder(dec_input, hidden)
 
         # Sample from the network as a multi nominal distribution
-        output_dist = output.data.view(-1).div(temperature).exp()
+        output_dist = output.view(-1).div(temperature).exp()
         top_i = torch.multinomial(output_dist, 1)[0]
 
         # Stop at the EOS
-        if top_i is EOS_token:
+        if top_i.item() == EOS_token:
             break
 
-        predicted_char = chr(top_i)
+        predicted_char = chr(top_i.item())
         predicted += predicted_char
 
         dec_input = str2tensor(predicted_char)
@@ -89,12 +93,8 @@ def translate(enc_input='thisissungkim.iloveyou.', predict_len=100, temperature=
     return enc_input, predicted
 
 
-encoder = sm.EncoderRNN(N_CHARS, HIDDEN_SIZE, N_LAYERS)
-decoder = sm.DecoderRNN(HIDDEN_SIZE, N_CHARS, N_LAYERS)
-
-if torch.cuda.is_available():
-    decoder.cuda()
-    encoder.cuda()
+encoder = sm.EncoderRNN(N_CHARS, HIDDEN_SIZE, N_LAYERS).to(device)
+decoder = sm.DecoderRNN(HIDDEN_SIZE, N_CHARS, N_LAYERS).to(device)
 print(encoder, decoder)
 test()
 
@@ -106,7 +106,8 @@ criterion = nn.CrossEntropyLoss()
 train_loader = DataLoader(dataset=TextDataset(),
                           batch_size=BATCH_SIZE,
                           shuffle=True,
-                          num_workers=2)
+                          num_workers=4,  # 增加数据加载线程
+                          pin_memory=True if device.type == 'cuda' else False)
 
 print("Training for %d epochs..." % N_EPOCH)
 for epoch in range(1, N_EPOCH + 1):
@@ -114,7 +115,7 @@ for epoch in range(1, N_EPOCH + 1):
     for i, (srcs, targets) in enumerate(train_loader):
         train_loss = train(srcs[0], targets[0])  # Batch is 1
 
-        if i % 100 is 0:
+        if i % 100 == 0:
             print('[(%d %d%%) %.4f]' %
                   (epoch, epoch / N_EPOCH * 100, train_loss))
             print(translate(srcs[0]), '\n')

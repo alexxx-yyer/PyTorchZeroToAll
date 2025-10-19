@@ -2,7 +2,10 @@
 import sys
 import torch
 import torch.nn as nn
-from torch.autograd import Variable
+
+# CUDA设备设置
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+print(f'Using device: {device}')
 
 torch.manual_seed(777)  # reproducibility
 #            0    1    2    3    4
@@ -19,9 +22,9 @@ one_hot_lookup = [[1, 0, 0, 0, 0],  # 0
 y_data = [1, 0, 2, 3, 3, 4]    # ihello
 x_one_hot = [one_hot_lookup[x] for x in x_data]
 
-# As we have one batch of samples, we will change them to variables only once
-inputs = Variable(torch.Tensor(x_one_hot))
-labels = Variable(torch.LongTensor(y_data))
+# As we have one batch of samples, we will change them to tensors only once
+inputs = torch.tensor(x_one_hot, dtype=torch.float32).to(device)
+labels = torch.tensor(y_data, dtype=torch.long).to(device)
 
 num_classes = 5
 input_size = 5  # one-hot size
@@ -51,11 +54,11 @@ class Model(nn.Module):
     def init_hidden(self):
         # Initialize hidden and cell states
         # (num_layers * num_directions, batch, hidden_size)
-        return Variable(torch.zeros(num_layers, batch_size, hidden_size))
+        return torch.zeros(num_layers, batch_size, hidden_size).to(device)
 
 
 # Instantiate RNN model
-model = Model()
+model = Model().to(device)
 print(model)
 
 # Set loss and optimizer function
@@ -74,8 +77,8 @@ for epoch in range(100):
         # print(input.size(), label.size())
         hidden, output = model(hidden, input)
         val, idx = output.max(1)
-        sys.stdout.write(idx2char[idx.data[0]])
-        loss += criterion(output, torch.LongTensor([label]))
+        sys.stdout.write(idx2char[idx.item()])
+        loss += criterion(output, torch.tensor([label], dtype=torch.long).to(device))
 
     print(", epoch: %d, loss: %1.3f" % (epoch + 1, loss))
 

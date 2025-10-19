@@ -2,8 +2,13 @@
 # https://github.com/yunjey/pytorch-tutorial/blob/master/tutorials/01-basics/pytorch_basics/main.py
 # http://pytorch.org/tutorials/beginner/data_loading_tutorial.html#dataset-class
 from torch.utils.data import Dataset, DataLoader
-from torch import nn, from_numpy, optim
+from torch import nn, optim
+import torch
 import numpy as np
+
+# CUDA设备设置
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+print(f'Using device: {device}')
 
 
 class DiabetesDataset(Dataset):
@@ -13,8 +18,9 @@ class DiabetesDataset(Dataset):
         xy = np.loadtxt('./data/diabetes.csv.gz',
                         delimiter=',', dtype=np.float32)
         self.len = xy.shape[0]
-        self.x_data = from_numpy(xy[:, 0:-1])
-        self.y_data = from_numpy(xy[:, [-1]])
+        # 不在初始化时移动到GPU，避免worker进程问题
+        self.x_data = torch.from_numpy(xy[:, 0:-1])
+        self.y_data = torch.from_numpy(xy[:, [-1]])
 
     def __getitem__(self, index):
         return self.x_data[index], self.y_data[index]
@@ -27,7 +33,7 @@ dataset = DiabetesDataset()
 train_loader = DataLoader(dataset=dataset,
                           batch_size=32,
                           shuffle=True,
-                          num_workers=2)
+                          num_workers=0)  # 设置为0避免worker进程CUDA问题
 
 
 class Model(nn.Module):
@@ -56,7 +62,7 @@ class Model(nn.Module):
 
 
 # our model
-model = Model()
+model = Model().to(device)
 
 # Construct our loss function and an Optimizer. The call to model.parameters()
 # in the SGD constructor will contain the learnable parameters of the two
@@ -69,6 +75,9 @@ for epoch in range(2):
     for i, data in enumerate(train_loader, 0):
         # get the inputs
         inputs, labels = data
+        
+        # 在训练循环中移动到GPU
+        inputs, labels = inputs.to(device), labels.to(device)
 
         # Forward pass: Compute predicted y by passing x to the model
         y_pred = model(inputs)

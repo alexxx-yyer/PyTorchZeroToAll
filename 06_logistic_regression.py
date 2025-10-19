@@ -3,10 +3,15 @@ from torch import nn
 from torch import sigmoid
 import torch.nn.functional as F
 import torch.optim as optim
+import torch
+
+# CUDA设备设置
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+print(f'Using device: {device}')
 
 # Training data and ground truth
-x_data = tensor([[1.0], [2.0], [3.0], [4.0]])
-y_data = tensor([[0.], [0.], [1.], [1.]])
+x_data = tensor([[1.0], [2.0], [3.0], [4.0]]).to(device)
+y_data = tensor([[0.], [0.], [1.], [1.]]).to(device)
 
 
 class Model(nn.Module):
@@ -27,7 +32,7 @@ class Model(nn.Module):
 
 
 # our model
-model = Model()
+model = Model().to(device)
 
 # Construct our loss function and an Optimizer. The call to model.parameters()
 # in the SGD constructor will contain the learnable parameters of the two
@@ -51,7 +56,7 @@ for epoch in range(1000):
 
 # After training
 print(f'\nLet\'s predict the hours need to score above 50%\n{"=" * 50}')
-hour_var = model(tensor([[1.0]]))
+hour_var = model(tensor([[1.0]]).to(device))
 print(f'Prediction after 1 hour of training: {hour_var.item():.4f} | Above 50%: {hour_var.item() > 0.5}')
-hour_var = model(tensor([[7.0]]))
+hour_var = model(tensor([[7.0]]).to(device))
 print(f'Prediction after 7 hours of training: {hour_var.item():.4f} | Above 50%: { hour_var.item() > 0.5}')

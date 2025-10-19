@@ -3,8 +3,11 @@ import time
 import math
 import torch
 import torch.nn as nn
-from torch.autograd import Variable
 from torch.utils.data import DataLoader
+
+# CUDA设备设置
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+print(f'Using device: {device}')
 
 from name_dataset import NameDataset
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
@@ -52,21 +55,19 @@ class RNNClassifier(nn.Module):
         return fc_output
 
     def _init_hidden(self, batch_size):
-        hidden = torch.zeros(self.n_layers, batch_size, self.hidden_size)
-        return Variable(hidden)
+        hidden = torch.zeros(self.n_layers, batch_size, self.hidden_size).to(device)
+        return hidden
 
 # Help functions
-
-
 def str2ascii_arr(msg):
     arr = [ord(c) for c in msg]
     return arr, len(arr)
 
 # pad sequences and sort the tensor
 def pad_sequences(vectorized_seqs, seq_lengths):
-    seq_tensor = torch.zeros((len(vectorized_seqs), seq_lengths.max())).long()
+    seq_tensor = torch.zeros((len(vectorized_seqs), seq_lengths.max())).long().to(device)
     for idx, (seq, seq_len) in enumerate(zip(vectorized_seqs, seq_lengths)):
-        seq_tensor[idx, :seq_len] = torch.LongTensor(seq)
+        seq_tensor[idx, :seq_len] = torch.LongTensor(seq).to(device)
     return seq_tensor
 
 # Create necessary variables, lengths, and target
@@ -79,11 +80,11 @@ def make_variables(names):
 
 if __name__ == '__main__':
     names = ['adylov', 'solan', 'hard', 'san']
-    classifier = RNNClassifier(N_CHARS, HIDDEN_SIZE, N_CLASSES)
+    classifier = RNNClassifier(N_CHARS, HIDDEN_SIZE, N_CLASSES).to(device)
 
     for name in names:
         arr, _ = str2ascii_arr(name)
-        inp = Variable(torch.LongTensor([arr]))
+        inp = torch.tensor([arr], dtype=torch.long).to(device)
         out = classifier(inp)
         print("in", inp.size(), "out", out.size())
 
@@ -91,5 +92,3 @@ if __name__ == '__main__':
     inputs = make_variables(names)
     out = classifier(inputs)
     print("batch in", inputs.size(), "batch out", out.size())
-
-

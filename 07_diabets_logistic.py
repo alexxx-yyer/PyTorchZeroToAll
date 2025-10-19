@@ -1,9 +1,14 @@
-from torch import nn, optim, from_numpy
+from torch import nn, optim
+import torch
 import numpy as np
 
+# CUDA设备设置
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+print(f'Using device: {device}')
+
 xy = np.loadtxt('./data/diabetes.csv.gz', delimiter=',', dtype=np.float32)
-x_data = from_numpy(xy[:, 0:-1])
-y_data = from_numpy(xy[:, [-1]])
+x_data = torch.from_numpy(xy[:, 0:-1]).to(device)
+y_data = torch.from_numpy(xy[:, [-1]]).to(device)
 print(f'X\'s shape: {x_data.shape} | Y\'s shape: {y_data.shape}')
 
 
@@ -32,7 +37,7 @@ class Model(nn.Module):
 
 
 # our model
-model = Model()
+model = Model().to(device)
 
 
 # Construct our loss function and an Optimizer. The call to model.parameters()

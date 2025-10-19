@@ -3,7 +3,6 @@ import time
 import math
 import torch
 import torch.nn as nn
-from torch.autograd import Variable
 from torch.utils.data import DataLoader
 
 from name_dataset import NameDataset
@@ -12,17 +11,22 @@ from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 # Parameters and DataLoaders
 HIDDEN_SIZE = 100
 N_LAYERS = 2
-BATCH_SIZE = 256
+BATCH_SIZE = 512  # 增加批处理大小
 N_EPOCHS = 100
+
+# 设备管理
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+print(f'Using device: {device}')
 
 test_dataset = NameDataset(is_train_set=False)
 test_loader = DataLoader(dataset=test_dataset,
-                         batch_size=BATCH_SIZE, shuffle=True)
-
+                         batch_size=BATCH_SIZE, shuffle=True,
+                         num_workers=4, pin_memory=True if device.type == 'cuda' else False)
 
 train_dataset = NameDataset(is_train_set=True)
 train_loader = DataLoader(dataset=train_dataset,
-                          batch_size=BATCH_SIZE, shuffle=True)
+                          batch_size=BATCH_SIZE, shuffle=True,
+                          num_workers=4, pin_memory=True if device.type == 'cuda' else False)
 
 N_COUNTRIES = len(train_dataset.get_countries())
 print(N_COUNTRIES, "countries")
@@ -37,19 +41,19 @@ def time_since(since):
     return '%dm %ds' % (m, s)
 
 
-def create_variable(tensor):
-    # Do cuda() before wrapping with variable
+def create_tensor(tensor):
+    # Move tensor to cuda if available
     if torch.cuda.is_available():
-        return Variable(tensor.cuda())
+        return tensor.cuda()
     else:
-        return Variable(tensor)
+        return tensor
 
 
 # pad sequences and sort the tensor
 def pad_sequences(vectorized_seqs, seq_lengths, countries):
-    seq_tensor = torch.zeros((len(vectorized_seqs), seq_lengths.max())).long()
+    seq_tensor = torch.zeros((len(vectorized_seqs), seq_lengths.max()), dtype=torch.long)
     for idx, (seq, seq_len) in enumerate(zip(vectorized_seqs, seq_lengths)):
-        seq_tensor[idx, :seq_len] = torch.LongTensor(seq)
+        seq_tensor[idx, :seq_len] = torch.tensor(seq, dtype=torch.long)
 
     # Sort tensors by their length
     seq_lengths, perm_idx = seq_lengths.sort(0, descending=True)
@@ -60,11 +64,10 @@ def pad_sequences(vectorized_seqs, seq_lengths, countries):
     if len(countries):
         target = target[perm_idx]
 
-    # Return variables
-    # DataParallel requires everything to be a Variable
-    return create_variable(seq_tensor), \
-        create_variable(seq_lengths), \
-        create_variable(target)
+    # Return tensors
+    return create_tensor(seq_tensor), \
+        create_tensor(seq_lengths), \
+        create_tensor(target)
 
 
 # Create necessary variables, lengths, and target
@@ -83,7 +86,7 @@ def str2ascii_arr(msg):
 def countries2tensor(countries):
     country_ids = [train_dataset.get_country_id(
         country) for country in countries]
-    return torch.LongTensor(country_ids)
+    return torch.tensor(country_ids, dtype=torch.long)
 
 
 class RNNClassifier(nn.Module):
@@ -129,7 +132,7 @@ class RNNClassifier(nn.Module):
     def _init_hidden(self, batch_size):
         hidden = torch.zeros(self.n_layers * self.n_directions,
                              batch_size, self.hidden_size)
-        return create_variable(hidden)
+        return create_tensor(hidden)
 
 
 # Train cycle
@@ -141,7 +144,7 @@ def train():
         output = classifier(input, seq_lengths)
 
         loss = criterion(output, target)
-        total_loss += loss.data[0]
+        total_loss += loss.item()
 
         classifier.zero_grad()
         loss.backward()
@@ -152,7 +155,7 @@ def train():
                 time_since(start), epoch,  i *
                 len(names), len(train_loader.dataset),
                 100. * i * len(names) / len(train_loader.dataset),
-                total_loss / i * len(names)))
+                total_loss / i))
 
     return total_loss
 
@@ -163,7 +166,7 @@ def test(name=None):
     if name:
         input, seq_lengths, target = make_variables([name], [])
         output = classifier(input, seq_lengths)
-        pred = output.data.max(1, keepdim=True)[1]
+        pred = output.max(1, keepdim=True)[1]
         country_id = pred.cpu().numpy()[0][0]
         print(name, "is", train_dataset.get_country(country_id))
         return
@@ -175,8 +178,8 @@ def test(name=None):
     for names, countries in test_loader:
         input, seq_lengths, target = make_variables(names, countries)
         output = classifier(input, seq_lengths)
-        pred = output.data.max(1, keepdim=True)[1]
-        correct += pred.eq(target.data.view_as(pred)).cpu().sum()
+        pred = output.max(1, keepdim=True)[1]
+        correct += pred.eq(target.view_as(pred)).cpu().sum().item()
 
     print('\nTest set: Accuracy: {}/{} ({:.0f}%)\n'.format(
         correct, train_data_size, 100. * correct / train_data_size))
@@ -184,14 +187,11 @@ def test(name=None):
 
 if __name__ == '__main__':
 
-    classifier = RNNClassifier(N_CHARS, HIDDEN_SIZE, N_COUNTRIES, N_LAYERS)
+    classifier = RNNClassifier(N_CHARS, HIDDEN_SIZE, N_COUNTRIES, N_LAYERS).to(device)
     if torch.cuda.device_count() > 1:
         print("Let's use", torch.cuda.device_count(), "GPUs!")
         # dim = 0 [33, xxx] -> [11, ...], [11, ...], [11, ...] on 3 GPUs
         classifier = nn.DataParallel(classifier)
-
-    if torch.cuda.is_available():
-        classifier.cuda()
 
     optimizer = torch.optim.Adam(classifier.parameters(), lr=0.001)
     criterion = nn.CrossEntropyLoss()

@@ -2,8 +2,12 @@ from torch import nn
 import torch
 from torch import tensor
 
-x_data = tensor([[1.0], [2.0], [3.0]])
-y_data = tensor([[2.0], [4.0], [6.0]])
+# CUDA设备设置
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+print(f'Using device: {device}')
+
+x_data = tensor([[1.0], [2.0], [3.0]]).to(device)
+y_data = tensor([[2.0], [4.0], [6.0]]).to(device)
 
 
 class Model(nn.Module):
@@ -25,7 +29,7 @@ class Model(nn.Module):
 
 
 # our model
-model = Model()
+model = Model().to(device)
 
 # Construct our loss function and an Optimizer. The call to model.parameters()
 # in the SGD constructor will contain the learnable parameters of the two
@@ -49,6 +53,6 @@ for epoch in range(500):
 
 
 # After training
-hour_var = tensor([[4.0]])
+hour_var = tensor([[4.0]]).to(device)
 y_pred = model(hour_var)
-print("Prediction (after training)",  4, model(hour_var).data[0][0].item())
+print("Prediction (after training)",  4, model(hour_var).item())
